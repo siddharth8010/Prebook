@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Pre Book — Photographer Booking App</title>
+  <meta name="description" content="Gear and schedule booking platform for Siddharth and Diljith — freelance photographer partners." />
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Firebase SDK (must be inside <head>) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+  <canvas id="particle-canvas"></canvas>
+
+  <!-- ===================== LOGIN SCREEN ===================== -->
+  <div id="login-screen" class="screen active">
+    <div class="login-orb orb-1"></div>
+    <div class="login-orb orb-2"></div>
+    <div class="login-orb orb-3"></div>
+    <div class="login-content">
+      <div class="brand-mark">
+        <div class="brand-icon">
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="24" cy="24" r="10" stroke="url(#lg1)" stroke-width="2.5"/>
+            <rect x="6" y="14" width="36" height="26" rx="5" stroke="url(#lg1)" stroke-width="2.5"/>
+            <path d="M16 14V11C16 9.34315 17.3431 8 19 8H29C30.6569 8 32 9.34315 32 11V14" stroke="url(#lg1)" stroke-width="2.5"/>
+            <circle cx="38" cy="19" r="2" fill="url(#lg1)"/>
+            <defs>
+              <linearGradient id="lg1" x1="6" y1="8" x2="42" y2="40" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <h1 class="brand-name">Pre Book</h1>
+        <p class="brand-tagline">Gear &amp; Availability Management</p>
+      </div>
+      <p class="login-prompt">Who are you?</p>
+      <div class="user-cards-row">
+        <div class="user-card" id="card-siddharth" onclick="login('siddharth')" tabindex="0" role="button">
+          <div class="user-card-glow siddharth-glow"></div>
+          <div class="user-avatar siddharth-avatar">S</div>
+          <h3 class="user-card-name">Siddharth</h3>
+          <p class="user-card-role">Photographer</p>
+          <div class="user-card-enter">Enter →</div>
+        </div>
+        <div class="user-card" id="card-diljith" onclick="login('diljith')" tabindex="0" role="button">
+          <div class="user-card-glow diljith-glow"></div>
+          <div class="user-avatar diljith-avatar">D</div>
+          <h3 class="user-card-name">Diljith</h3>
+          <p class="user-card-role">Photographer</p>
+          <div class="user-card-enter">Enter →</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MAIN APP SCREEN ===================== -->
+  <div id="app-screen" class="screen">
+    <header class="app-header">
+      <div class="header-brand">
+        <svg class="header-logo-svg" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="18" r="6" stroke="url(#hl)" stroke-width="1.8"/>
+          <rect x="4" y="11" width="24" height="17" rx="3" stroke="url(#hl)" stroke-width="1.8"/>
+          <path d="M11 11V9.5C11 8.67 11.67 8 12.5 8H19.5C20.33 8 21 8.67 21 9.5V11" stroke="url(#hl)" stroke-width="1.8"/>
+          <circle cx="26" cy="13.5" r="1.2" fill="url(#hl)"/>
+          <defs>
+            <linearGradient id="hl" x1="4" y1="8" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#818cf8"/><stop offset="1" stop-color="#22d3ee"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="header-brand-name">Pre Book</span>
+      </div>
+      <div class="header-user-badge" id="header-user-badge">
+        <div class="live-dot"></div>
+        <span id="header-user-name">Siddharth</span>
+      </div>
+      <div class="header-actions">
+        <button class="header-btn" onclick="openSettings()" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+        <button class="header-btn logout-btn" onclick="logout()" title="Logout" aria-label="Logout">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section class="calendar-panel">
+        <div class="month-nav">
+          <button class="month-nav-btn" onclick="prevMonth()" aria-label="Previous month">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="month-title-wrap">
+            <h2 class="month-title" id="month-title">October 2026</h2>
+            <button class="today-pill" onclick="goToToday()">Today</button>
+          </div>
+          <button class="month-nav-btn" onclick="nextMonth()" aria-label="Next month">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+        <div class="calendar-legend">
+          <div class="legend-chip my-chip"><div class="legend-dot"></div><span id="my-legend-label">Your Booking</span></div>
+          <div class="legend-chip partner-chip"><div class="legend-dot"></div><span id="partner-legend-label">Partner (Blocked 🔴)</span></div>
+          <div class="legend-chip both-chip"><div class="legend-dot"></div><span>Both Booked</span></div>
+        </div>
+        <div class="calendar-3d-wrap">
+          <div class="calendar-scene" id="calendar-scene">
+            <div class="calendar-face">
+              <div class="day-headers">
+                <span>Sun</span><span>Mon</span><span>Tue</span>
+                <span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+              </div>
+              <div class="days-grid" id="days-grid"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <div class="sidebar-card">
+          <h3 class="sidebar-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Upcoming Events
+          </h3>
+          <div id="upcoming-list" class="upcoming-list">
+            <p class="empty-state">No upcoming bookings yet.<br/>Click a date to add one!</p>
+          </div>
+        </div>
+        <div class="sidebar-card stats-card">
+          <h3 class="sidebar-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            This Month
+          </h3>
+          <div class="stats-grid">
+            <div class="stat-item"><div class="stat-value" id="stat-my">0</div><div class="stat-label">My Bookings</div></div>
+            <div class="stat-item"><div class="stat-value" id="stat-partner">0</div><div class="stat-label">Partner's</div></div>
+            <div class="stat-item"><div class="stat-value" id="stat-free">0</div><div class="stat-label">Free Days</div></div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- ===================== BOOKING MODAL ===================== -->
+  <div id="booking-modal" class="modal-overlay" onclick="handleOverlayClick(event,'booking-modal')">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-date-heading">
+      <div class="modal-header">
+        <div>
+          <p class="modal-date-label">Booking for</p>
+          <h2 class="modal-date-title" id="modal-date-heading">—</h2>
+        </div>
+        <button class="modal-close" onclick="closeBookingModal()" aria-label="Close">✕</button>
+      </div>
+      <div id="existing-bookings-section" class="existing-bookings-section" style="display:none">
+        <div><h4 class="section-label">Already booked on this date</h4></div>
+        <div id="existing-bookings-list"></div>
+      </div>
+      <div id="new-booking-section">
+        <h4 class="section-label">Add Your Booking</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="inp-event-name">Event Name *</label>
+            <input class="form-input" id="inp-event-name" type="text" placeholder="e.g. Wedding Shoot" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="inp-client-name">Client Name</label>
+            <input class="form-input" id="inp-client-name" type="text" placeholder="Client's name" autocomplete="off" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="inp-location">Location</label>
+          <input class="form-input" id="inp-location" type="text" placeholder="Venue / city" autocomplete="off" />
+        </div>
+        <div class="time-range-group">
+          <div class="time-range-label">🕐 Gear Needed</div>
+          <div class="time-range-row">
+            <div class="form-group" style="margin:0;flex:1">
+              <label class="form-label" for="inp-start-time">From</label>
+              <input class="form-input" id="inp-start-time" type="time" />
+            </div>
+            <div class="time-range-arrow">→</div>
+            <div class="form-group" style="margin:0;flex:1">
+              <label class="form-label" for="inp-end-time">Until</label>
+              <input class="form-input" id="inp-end-time" type="time" />
+            </div>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:16px">
+          <label class="form-label">Required Gear</label>
+          <div class="gear-grid" id="gear-checklist"></div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-ghost" onclick="closeBookingModal()">Cancel</button>
+          <button class="btn-primary" id="save-booking-btn" onclick="saveBooking()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.81a16 16 0 0 0 6 6l.87-.87a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21 16z"/></svg>
+            Book &amp; Open WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SETTINGS MODAL ===================== -->
+  <div id="settings-modal" class="modal-overlay" onclick="handleOverlayClick(event,'settings-modal')">
+    <div class="modal-box settings-box" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h2 class="modal-date-title">Settings</h2>
+        <button class="modal-close" onclick="closeSettings()" aria-label="Close">✕</button>
+      </div>
+      <div class="settings-section">
+        <h4 class="section-label">🎒 Gear List</h4>
+        <div id="gear-settings-list" class="gear-settings-list"></div>
+        <div class="add-gear-row">
+          <input class="form-input" id="inp-new-gear" type="text" placeholder="Add custom gear item…" />
+          <button class="btn-primary btn-sm" onclick="addGearItem()">+ Add</button>
+        </div>
+      </div>
+      <div class="form-actions settings-actions">
+        <button class="btn-ghost" onclick="closeSettings()">Cancel</button>
+        <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== TOAST ===================== -->
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+  <!-- ===================== WHATSAPP DIALOG ===================== -->
+  <div id="wa-confirm" class="modal-overlay" onclick="handleOverlayClick(event,'wa-confirm')">
+    <div class="modal-box wa-confirm-box" role="dialog" aria-modal="true">
+
+      <div class="wa-icon">
+        <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#25D366" d="M16 0C7.164 0 0 7.163 0 16c0 2.829.741 5.487 2.036 7.8L0 32l8.435-2.211A15.94 15.94 0 0 0 16 32c8.836 0 16-7.163 16-16S24.836 0 16 0zm0 29.333a13.29 13.29 0 0 1-6.781-1.856l-.487-.29-5.011 1.314 1.337-4.878-.318-.5A13.267 13.267 0 0 1 2.667 16C2.667 8.637 8.637 2.667 16 2.667S29.333 8.637 29.333 16 23.363 29.333 16 29.333zm7.306-9.912c-.4-.2-2.369-1.169-2.737-1.303-.368-.135-.636-.2-.904.2s-1.038 1.303-1.271 1.57c-.234.268-.468.3-.868.1s-1.692-.624-3.223-1.989c-1.191-1.063-1.995-2.375-2.228-2.775s-.025-.617.176-.817c.181-.18.4-.468.6-.702.2-.234.268-.4.4-.668.135-.268.067-.502-.033-.702-.1-.2-.904-2.176-1.238-2.977-.326-.782-.657-.676-.904-.688l-.768-.014c-.268 0-.702.1-1.071.502s-1.405 1.37-1.405 3.346 1.438 3.88 1.638 4.148c.2.268 2.827 4.317 6.85 6.053.957.413 1.703.659 2.286.844.96.305 1.834.262 2.525.159.77-.114 2.369-.968 2.704-1.903.334-.935.334-1.737.234-1.903-.1-.168-.368-.268-.769-.468z"/>
+        </svg>
+      </div>
+
+      <h3 class="wa-confirm-title">Booking Saved! 🎉</h3>
+      <p class="wa-confirm-msg" id="wa-confirm-msg">Send WhatsApp to your partner.</p>
+
+      <!-- Phone number input (hidden when number already saved) -->
+      <div id="wa-phone-section" style="display:none; margin-bottom:16px; text-align:left">
+        <label class="form-label" id="wa-phone-label" style="margin-bottom:8px;display:block">
+          Enter Partner's WhatsApp Number
+        </label>
+        <input class="form-input" id="inp-wa-phone" type="tel"
+               placeholder="91XXXXXXXXXX" style="margin-bottom:6px" />
+        <p style="font-size:0.72rem;color:var(--text-3)">
+          India: <strong style="color:var(--amber)">91</strong> + 10-digit number &nbsp;
+          e.g. <strong style="color:var(--amber)">919876543210</strong>
+        </p>
+      </div>
+
+      <button class="btn-wa wa-send-big-btn" id="wa-open-btn" onclick="doOpenWhatsApp()">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:22px;height:22px;flex-shrink:0">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+          <path d="M11.999 0C5.373 0 0 5.373 0 12c0 2.119.553 4.109 1.524 5.835L.053 23.97a.5.5 0 0 0 .611.612l6.262-1.641A11.946 11.946 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 11.999 0zm0 21.818a9.815 9.815 0 0 1-5.007-1.368l-.359-.213-3.717.975.992-3.61-.234-.373A9.817 9.817 0 0 1 2.182 12C2.182 6.569 6.568 2.182 12 2.182S21.818 6.569 21.818 12 17.432 21.818 12 21.818z"/>
+        </svg>
+        Open WhatsApp
+      </button>
+
+      <p style="font-size:0.75rem;color:var(--text-3);margin-top:10px;text-align:center">
+        WhatsApp opens with message ready → just tap <strong style="color:#25D366">Send</strong> ✓
+      </p>
+
+      <button class="btn-ghost" style="width:100%;margin-top:12px" onclick="closeWaConfirm()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
