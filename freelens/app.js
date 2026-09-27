@@ -5,8 +5,8 @@
 // ╚══════════════════════════════════════════╝
 
 const USERS = {
-  siddharth: { id: 'siddharth', name: 'Siddharth', color: '#818cf8', partner: 'diljith',   phone: '919947676051' },
-  diljith:   { id: 'diljith',   name: 'Diljith',   color: '#22d3ee', partner: 'siddharth', phone: '918590177028' },
+  siddharth: { id: 'siddharth', name: 'Siddharth', email: 'siddharthsuresh57@gmail.com', color: '#818cf8', partner: 'diljith',   phone: '919947676051' },
+  diljith:   { id: 'diljith',   name: 'Diljith',   email: 'diljith256@gmail.com', color: '#22d3ee', partner: 'siddharth', phone: '918590177028' },
 };
 
 const DEFAULT_GEAR = [
@@ -34,8 +34,12 @@ let selectedDate = null;
 let bookingsCache = {};
 let settingsCache = {};
 let db = null;
+let auth = null;
 let firebaseReady = false;
 let bookingsLoaded = false;
+let loginInProgress = false;
+let stopBookingsListener = null;
+let stopSettingsListener = null;
 
 // ╔══════════════════════════════════════════╗
 // ║  FIREBASE CONFIG                         ║
@@ -75,6 +79,7 @@ function getPartnerPhone() {
 
 function requireBookingsReady() {
   if (!firebaseReady || !db) throw new Error('Firebase is not connected');
+  if (!auth || !auth.currentUser || !currentUser) throw new Error('Sign in is required');
   if (!bookingsLoaded) throw new Error('Calendar is still loading');
 }
 
@@ -136,9 +141,9 @@ async function saveSettingsData(settings) {
 }
 
 function startFirestoreListeners() {
-  if (!db) return;
+  if (!db || stopBookingsListener) return;
 
-  db.collection('data').doc('bookings').onSnapshot(
+  stopBookingsListener = db.collection('data').doc('bookings').onSnapshot(
     (snap) => {
       if (snap.exists) {
         bookingsCache = snap.data().data || {};
@@ -154,10 +159,12 @@ function startFirestoreListeners() {
     },
     (err) => {
       console.error('Bookings listener error:', err);
+      bookingsLoaded = false;
+      showToast('Could not load calendar. Please try again.', 'error');
     }
   );
 
-  db.collection('data').doc('settings').onSnapshot(
+  stopSettingsListener = db.collection('data').doc('settings').onSnapshot(
     (snap) => {
       if (snap.exists) {
         settingsCache = snap.data().data || {};
@@ -171,6 +178,16 @@ function startFirestoreListeners() {
   );
 }
 
+function stopFirestoreListeners() {
+  if (stopBookingsListener) stopBookingsListener();
+  if (stopSettingsListener) stopSettingsListener();
+  stopBookingsListener = null;
+  stopSettingsListener = null;
+  bookingsLoaded = false;
+  bookingsCache = {};
+  settingsCache = {};
+}
+
 function initFirebase() {
   try {
     if (typeof firebase === 'undefined') {
@@ -179,9 +196,17 @@ function initFirebase() {
     }
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    auth = firebase.auth();
     firebaseReady = true;
-    startFirestoreListeners();
-    console.log('Firebase connected successfully');
+    auth.onAuthStateChanged(user => {
+      if (loginInProgress) return;
+      const role = roleForFirebaseUser(user);
+      if (role) enterWorkspace(role);
+      else {
+        leaveWorkspace();
+        if (user) showToast('This Google account is not approved for Pre Book.', 'error');
+      }
+    });
   } catch (err) {
     console.error('Firebase init failed:', err);
     firebaseReady = false;
@@ -191,9 +216,43 @@ function initFirebase() {
 // ║  AUTHENTICATION                          ║
 // ╚══════════════════════════════════════════╝
 
-function login(userId) {
+function roleForFirebaseUser(user) {
+  if (!user || !user.emailVerified ||
+      !(user.providerData || []).some(provider => provider.providerId === 'google.com')) return null;
+  const email = String(user.email || '').toLowerCase();
+  return Object.keys(USERS).find(id => USERS[id].email === email) || null;
+}
+
+async function login(userId) {
+  if (!USERS[userId] || !auth || loginInProgress) {
+    if (!auth) showToast('Google sign-in is unavailable. Please try again.', 'error');
+    return;
+  }
+  loginInProgress = true;
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const result = await auth.signInWithPopup(provider);
+    const role = roleForFirebaseUser(result.user);
+    if (role !== userId) {
+      await auth.signOut();
+      leaveWorkspace();
+      showToast('Please sign in with the Google account for this calendar.', 'error');
+      return;
+    }
+    enterWorkspace(role);
+  } catch (err) {
+    console.error('Google sign-in failed:', err);
+    showToast('Google sign-in failed. Please try again.', 'error');
+  } finally {
+    loginInProgress = false;
+  }
+}
+
+function enterWorkspace(userId) {
+  if (currentUser === userId) return;
   currentUser = userId;
-  localStorage.setItem('freelens_session', userId);
+  startFirestoreListeners();
 
   const user = USERS[userId];
   document.getElementById('header-user-name').textContent = user.name;
@@ -219,15 +278,23 @@ function login(userId) {
   renderStats();
 }
 
-function logout() {
+function leaveWorkspace() {
+  stopFirestoreListeners();
   currentUser = null;
-  localStorage.removeItem('freelens_session');
-  switchScreen('app-screen', 'login-screen');
+  if (document.getElementById('app-screen').classList.contains('active')) {
+    switchScreen('app-screen', 'login-screen');
+  }
 }
 
-function tryRestoreSession() {
-  const saved = localStorage.getItem('freelens_session');
-  if (saved && USERS[saved]) login(saved);
+async function logout() {
+  if (!auth) return;
+  try {
+    await auth.signOut();
+    leaveWorkspace();
+  } catch (err) {
+    console.error('Sign-out failed:', err);
+    showToast('Could not sign out. Please try again.', 'error');
+  }
 }
 
 // ╔══════════════════════════════════════════╗
@@ -812,7 +879,6 @@ function escAttr(str) {
 document.addEventListener('DOMContentLoaded', () => {
   initFirebase();
   initParticles();
-  tryRestoreSession();
 
   document.querySelectorAll('.user-card').forEach(card => {
     card.addEventListener('keydown', e => {

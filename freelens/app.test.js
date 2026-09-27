@@ -43,7 +43,7 @@ function makeBackend({ failWrites = false } = {}) {
   };
 }
 
-function openClient(backend, { sdkAvailable = true, delaySnapshot = false } = {}) {
+function openClient(backend, { sdkAvailable = true, delaySnapshot = false, authEmail = 'siddharthsuresh57@gmail.com' } = {}) {
   let ready;
   let initialized = 0;
   const pendingSnapshots = [];
@@ -58,6 +58,15 @@ function openClient(backend, { sdkAvailable = true, delaySnapshot = false } = {}
       },
     }) }),
   };
+  const authUser = { email: authEmail, emailVerified: true, providerData: [{ providerId: 'google.com' }] };
+  const auth = {
+    currentUser: authUser,
+    onAuthStateChanged(callback) { callback(authUser); },
+    async signInWithPopup() { this.currentUser = authUser; return { user: authUser }; },
+    async signOut() { this.currentUser = null; },
+  };
+  const firebaseAuth = () => auth;
+  firebaseAuth.GoogleAuthProvider = class { setCustomParameters() {} };
   const context = vm.createContext({
     console: { log() {}, warn() {}, error() {} },
     Date,
@@ -71,10 +80,11 @@ function openClient(backend, { sdkAvailable = true, delaySnapshot = false } = {}
     firebase: sdkAvailable ? {
       initializeApp() { initialized += 1; },
       firestore: () => firestore,
+      auth: firebaseAuth,
     } : undefined,
   });
   vm.runInContext(source, context);
-  vm.runInContext('initParticles = () => {}; tryRestoreSession = () => {}', context);
+  vm.runInContext('initParticles = () => {}; enterWorkspace = role => { currentUser = role; startFirestoreListeners(); }; leaveWorkspace = () => { currentUser = null; stopFirestoreListeners(); }; renderCalendar = () => {}; renderUpcoming = () => {}; renderStats = () => {}; showToast = () => {}', context);
   ready();
   return {
     initialized: () => initialized,
@@ -84,8 +94,26 @@ function openClient(backend, { sdkAvailable = true, delaySnapshot = false } = {}
     add: (date, booking) => context.createBooking(date, booking),
     remove: (date, id, user) => context.removeBooking(date, id, user),
     saveSettings: settings => context.saveSettingsData(settings),
+    roleFor: user => context.roleForFirebaseUser(user),
+    login: role => context.login(role),
+    activeUser: () => vm.runInContext('currentUser', context),
   };
 }
+
+test('only the two verified Google account emails map to calendar identities', () => {
+  const client = openClient(makeBackend());
+  const google = [{ providerId: 'google.com' }];
+  assert.equal(client.roleFor({ email: 'diljith256@gmail.com', emailVerified: true, providerData: google }), 'diljith');
+  assert.equal(client.roleFor({ email: 'outsider@example.com', emailVerified: true, providerData: google }), null);
+  assert.equal(client.roleFor({ email: 'siddharthsuresh57@gmail.com', emailVerified: false, providerData: google }), null);
+  assert.equal(client.roleFor({ email: 'siddharthsuresh57@gmail.com', emailVerified: true, providerData: [{ providerId: 'password' }] }), null);
+});
+
+test('the wrong Google account cannot enter the other calendar', async () => {
+  const client = openClient(makeBackend());
+  await client.login('diljith');
+  assert.equal(client.activeUser(), null);
+});
 
 test('bookings persist across browser sessions', async () => {
   const backend = makeBackend();
