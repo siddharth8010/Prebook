@@ -35,6 +35,7 @@ let bookingsCache = {};
 let settingsCache = {};
 let db = null;
 let firebaseReady = false;
+let bookingsLoaded = false;
 
 // ╔══════════════════════════════════════════╗
 // ║  FIREBASE CONFIG                         ║
@@ -72,27 +73,65 @@ function getPartnerPhone() {
   return USERS[partner].phone;
 }
 
-async function saveBookings(bookings) {
-  if (!firebaseReady || !db) {
-    throw new Error('Firebase is not connected');
-  }
+function requireBookingsReady() {
+  if (!firebaseReady || !db) throw new Error('Firebase is not connected');
+  if (!bookingsLoaded) throw new Error('Calendar is still loading');
+}
+
+async function createBooking(dateStr, booking) {
+  requireBookingsReady();
   try {
-    await db.collection('data').doc('bookings').set({ data: bookings || {} });
-    bookingsCache = bookings || {};
+    const ref = db.collection('data').doc('bookings');
+    const bookings = await db.runTransaction(async transaction => {
+      const snap = await transaction.get(ref);
+      const current = snap.exists ? (snap.data().data || {}) : {};
+      const day = Array.isArray(current[dateStr]) ? current[dateStr] : [];
+      const next = { ...current, [dateStr]: [...day, booking] };
+      transaction.set(ref, { data: next });
+      return next;
+    });
+    bookingsCache = bookings;
+    return bookings;
   } catch (err) {
-    console.error('Failed to save bookings:', err);
+    console.error('Failed to create booking:', err);
+    throw err;
+  }
+}
+
+async function removeBooking(dateStr, bookingId, userId) {
+  requireBookingsReady();
+  try {
+    const ref = db.collection('data').doc('bookings');
+    const bookings = await db.runTransaction(async transaction => {
+      const snap = await transaction.get(ref);
+      const current = snap.exists ? (snap.data().data || {}) : {};
+      const day = Array.isArray(current[dateStr]) ? current[dateStr] : [];
+      const target = day.find(booking => booking.id === bookingId);
+      if (!target) return current;
+      if (target.user !== userId) throw new Error('Cannot delete another user’s booking');
+      const remaining = day.filter(booking => booking.id !== bookingId);
+      const next = { ...current };
+      if (remaining.length) next[dateStr] = remaining;
+      else delete next[dateStr];
+      transaction.set(ref, { data: next });
+      return next;
+    });
+    bookingsCache = bookings;
+    return bookings;
+  } catch (err) {
+    console.error('Failed to delete booking:', err);
     throw err;
   }
 }
 
 async function saveSettingsData(settings) {
-  settingsCache = settings || {};
-  if (!firebaseReady || !db) return;
+  if (!firebaseReady || !db) throw new Error('Firebase is not connected');
   try {
-    await db.collection('data').doc('settings').set({ data: settingsCache });
+    await db.collection('data').doc('settings').set({ data: settings || {} });
+    settingsCache = settings || {};
   } catch (err) {
     console.error('Failed to save settings:', err);
-    showToast('Failed to sync settings.', 'error');
+    throw err;
   }
 }
 
@@ -106,6 +145,7 @@ function startFirestoreListeners() {
       } else {
         bookingsCache = {};
       }
+      if (!snap.metadata.fromCache) bookingsLoaded = true;
       if (currentUser) {
         renderCalendar();
         renderUpcoming();
@@ -452,14 +492,12 @@ async function saveBooking() {
     createdAt: new Date().toISOString(),
   };
 
-  const bookings = {
-    ...getBookings(),
-    [bookingDate]: [...(getBookings()[bookingDate] || []), booking],
-  };
   try {
-    await saveBookings(bookings);
+    await createBooking(bookingDate, booking);
   } catch (err) {
-    showToast('Booking not saved. Check your connection and try again.', 'error');
+    showToast(err.message === 'Calendar is still loading'
+      ? 'Calendar is still loading. Please try again.'
+      : 'Booking not saved. Check your connection and try again.', 'error');
     return;
   }
 
@@ -513,14 +551,9 @@ async function saveBooking() {
 async function deleteBooking(dateStr, bookingId) {
   if (!confirm('Delete this booking?')) return;
 
-  const bookings = { ...getBookings() };
-  if (bookings[dateStr]) {
-    bookings[dateStr] = bookings[dateStr].filter(b => b.id !== bookingId);
-    if (bookings[dateStr].length === 0) delete bookings[dateStr];
-  }
-
+  let bookings;
   try {
-    await saveBookings(bookings);
+    bookings = await removeBooking(dateStr, bookingId, currentUser);
   } catch (err) {
     showToast('Booking not deleted. Check your connection and try again.', 'error');
     return;
@@ -556,9 +589,13 @@ async function doOpenWhatsApp() {
   }
 
   const partnerKey = USERS[currentUser].partner;
-  const s = getSettings();
-  s[partnerKey + '_phone'] = raw;
-  await saveSettingsData(s);
+  const s = { ...getSettings(), [partnerKey + '_phone']: raw };
+  try {
+    await saveSettingsData(s);
+  } catch (err) {
+    showToast('Phone number not saved. Please try again.', 'error');
+    return;
+  }
 
   // Navigate in the same tab so popup blockers cannot prevent WhatsApp opening.
   window.location.assign(buildWaUrl(raw, window._pendingWaMsg || ''));
@@ -597,22 +634,32 @@ async function addGearItem() {
   const inp = document.getElementById('inp-new-gear');
   const val = inp.value.trim();
   if (!val) { inp.focus(); return; }
-  const s    = getSettings();
-  const gear = Array.isArray(s.gear) ? s.gear : [...DEFAULT_GEAR];
+  const s    = { ...getSettings() };
+  const gear = Array.isArray(s.gear) ? [...s.gear] : [...DEFAULT_GEAR];
   gear.push(val);
   s.gear = gear;
-  await saveSettingsData(s);
+  try {
+    await saveSettingsData(s);
+  } catch (err) {
+    showToast('Gear not saved. Please try again.', 'error');
+    return;
+  }
   inp.value = '';
   renderGearSettingsList();
   showToast('✅ Gear added!', 'success');
 }
 
 async function removeGearItem(index) {
-  const s    = getSettings();
-  const gear = Array.isArray(s.gear) ? s.gear : [...DEFAULT_GEAR];
+  const s    = { ...getSettings() };
+  const gear = Array.isArray(s.gear) ? [...s.gear] : [...DEFAULT_GEAR];
   gear.splice(index, 1);
   s.gear = gear;
-  await saveSettingsData(s);
+  try {
+    await saveSettingsData(s);
+  } catch (err) {
+    showToast('Gear not removed. Please try again.', 'error');
+    return;
+  }
   renderGearSettingsList();
 }
 

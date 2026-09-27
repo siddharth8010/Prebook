@@ -2,22 +2,62 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { join } = require('node:path');
 
-const source = fs.readFileSync(require('node:path').join(__dirname, 'app.js'), 'utf8');
+const source = fs.readFileSync(join(__dirname, 'app.js'), 'utf8');
 
-function openClient(store, { sdkAvailable = true, failWrites = false } = {}) {
+function makeBackend({ failWrites = false } = {}) {
+  const documents = {};
+  let queue = Promise.resolve();
+  const snapshot = name => {
+    const value = documents[name];
+    return { exists: value !== undefined, data: () => value, metadata: { fromCache: false } };
+  };
+  return {
+    documents,
+    firestore: {
+      collection: () => ({ doc: name => ({
+        name,
+        onSnapshot(onValue) { onValue(snapshot(name)); },
+        async set(value) {
+          if (failWrites) throw new Error('permission-denied');
+          documents[name] = structuredClone(value);
+        },
+      }) }),
+      runTransaction(callback) {
+        const result = queue.then(async () => {
+          const changes = [];
+          const transaction = {
+            get: async ref => snapshot(ref.name),
+            set: (ref, value) => changes.push([ref.name, value]),
+          };
+          const value = await callback(transaction);
+          if (failWrites) throw new Error('permission-denied');
+          for (const [name, update] of changes) documents[name] = structuredClone(update);
+          return value;
+        });
+        queue = result.catch(() => {});
+        return result;
+      },
+    },
+  };
+}
+
+function openClient(backend, { sdkAvailable = true, delaySnapshot = false } = {}) {
   let ready;
   let initialized = 0;
-  const doc = name => ({
-    onSnapshot(onValue) {
-      const value = store[name];
-      onValue({ exists: value !== undefined, data: () => value });
-    },
-    async set(value) {
-      if (failWrites) throw new Error('permission-denied');
-      store[name] = value;
-    },
-  });
+  const pendingSnapshots = [];
+  const firestore = {
+    ...backend.firestore,
+    collection: () => ({ doc: name => ({
+      ...backend.firestore.collection().doc(name),
+      onSnapshot(onValue, onError) {
+        const start = () => backend.firestore.collection().doc(name).onSnapshot(onValue, onError);
+        if (delaySnapshot) pendingSnapshots.push(start);
+        else start();
+      },
+    }) }),
+  };
   const context = vm.createContext({
     console: { log() {}, warn() {}, error() {} },
     Date,
@@ -30,7 +70,7 @@ function openClient(store, { sdkAvailable = true, failWrites = false } = {}) {
     },
     firebase: sdkAvailable ? {
       initializeApp() { initialized += 1; },
-      firestore() { return { collection: () => ({ doc }) }; },
+      firestore: () => firestore,
     } : undefined,
   });
   vm.runInContext(source, context);
@@ -38,30 +78,64 @@ function openClient(store, { sdkAvailable = true, failWrites = false } = {}) {
   ready();
   return {
     initialized: () => initialized,
+    load: () => pendingSnapshots.splice(0).forEach(start => start()),
     bookings: () => vm.runInContext('getBookings()', context),
-    save: bookings => context.saveBookings(bookings),
+    settings: () => vm.runInContext('getSettings()', context),
+    add: (date, booking) => context.createBooking(date, booking),
+    remove: (date, id, user) => context.removeBooking(date, id, user),
+    saveSettings: settings => context.saveSettingsData(settings),
   };
 }
 
-test('a booking survives a fresh browser session through Firestore', async () => {
-  const store = {};
-  const first = openClient(store);
-  const booking = { id: 'b-1', user: 'siddharth', eventName: 'Wedding' };
-  await first.save({ '2026-09-27': [booking] });
-
-  const second = openClient(store);
+test('bookings persist across browser sessions', async () => {
+  const backend = makeBackend();
+  const first = openClient(backend);
+  await first.add('2026-09-27', { id: 'b-1', user: 'siddharth', eventName: 'Wedding' });
+  const second = openClient(backend);
   assert.equal(first.initialized(), 1);
-  assert.equal(second.initialized(), 1);
   assert.equal(second.bookings()['2026-09-27'][0].eventName, 'Wedding');
 });
 
-test('a booking write fails clearly when Firebase is unavailable or rejects it', async () => {
-  const booking = { '2026-09-27': [{ id: 'b-2', eventName: 'Portraits' }] };
-  for (const options of [{ sdkAvailable: false }, { failWrites: true }]) {
-    const store = {};
-    const client = openClient(store, options);
-    await assert.rejects(client.save(booking));
-    assert.deepEqual(Object.keys(client.bookings()), []);
-    assert.equal(store.bookings, undefined);
-  }
+test('stale clients adding and deleting bookings preserve the other person’s data', async () => {
+  const backend = makeBackend();
+  const siddharth = openClient(backend);
+  const diljith = openClient(backend);
+  await Promise.all([
+    siddharth.add('2026-09-28', { id: 'sid-1', user: 'siddharth', eventName: 'Wedding' }),
+    diljith.add('2026-09-28', { id: 'dil-1', user: 'diljith', eventName: 'Portraits' }),
+  ]);
+  assert.equal(backend.documents.bookings.data['2026-09-28'].length, 2);
+  await siddharth.remove('2026-09-28', 'sid-1', 'siddharth');
+  assert.equal(backend.documents.bookings.data['2026-09-28'][0].id, 'dil-1');
+});
+
+test('writes wait for the initial server snapshot and fail if Firebase is unavailable', async () => {
+  const backend = makeBackend();
+  const loading = openClient(backend, { delaySnapshot: true });
+  const booking = { id: 'b-2', user: 'siddharth', eventName: 'Portraits' };
+  await assert.rejects(loading.add('2026-09-27', booking));
+  assert.equal(backend.documents.bookings, undefined);
+  loading.load();
+  await loading.add('2026-09-27', booking);
+  const offline = openClient(backend, { sdkAvailable: false });
+  await assert.rejects(offline.add('2026-09-27', booking));
+});
+
+test('rejected booking writes do not appear as saved', async () => {
+  const backend = makeBackend({ failWrites: true });
+  const client = openClient(backend);
+  await assert.rejects(client.add('2026-09-27', {
+    id: 'b-3', user: 'siddharth', eventName: 'Event',
+  }));
+  assert.equal(client.bookings()['2026-09-27'], undefined);
+  assert.equal(backend.documents.bookings, undefined);
+});
+
+test('failed settings writes leave the cached settings unchanged', async () => {
+  const backend = makeBackend({ failWrites: true });
+  backend.documents.settings = { data: { gear: ['Lens'] } };
+  const client = openClient(backend);
+  await assert.rejects(client.saveSettings({ gear: ['Lens', 'Tripod'] }));
+  assert.deepEqual(Array.from(client.settings().gear), ['Lens']);
+  assert.deepEqual(backend.documents.settings.data.gear, ['Lens']);
 });
