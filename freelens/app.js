@@ -73,16 +73,15 @@ function getPartnerPhone() {
 }
 
 async function saveBookings(bookings) {
-  bookingsCache = bookings || {};
   if (!firebaseReady || !db) {
-    console.warn('Firebase not ready – booking saved only locally');
-    return;
+    throw new Error('Firebase is not connected');
   }
   try {
-    await db.collection('data').doc('bookings').set({ data: bookingsCache });
+    await db.collection('data').doc('bookings').set({ data: bookings || {} });
+    bookingsCache = bookings || {};
   } catch (err) {
     console.error('Failed to save bookings:', err);
-    showToast('Failed to sync bookings. Check internet.', 'error');
+    throw err;
   }
 }
 
@@ -453,11 +452,16 @@ async function saveBooking() {
     createdAt: new Date().toISOString(),
   };
 
-  const bookings = getBookings();
-  if (!Array.isArray(bookings[selectedDate])) bookings[selectedDate] = [];
-  bookings[selectedDate].push(booking);
-
-  await saveBookings(bookings);
+  const bookings = {
+    ...getBookings(),
+    [bookingDate]: [...(getBookings()[bookingDate] || []), booking],
+  };
+  try {
+    await saveBookings(bookings);
+  } catch (err) {
+    showToast('Booking not saved. Check your connection and try again.', 'error');
+    return;
+  }
 
   renderCalendar();
   renderUpcoming();
@@ -473,7 +477,7 @@ async function saveBooking() {
   const timeStr  = formatTimeRange(startTime, endTime);
 
   const msg = [
-    `📸 *Prebook Booking Alert*`,
+    `📸 *Pre Book Booking Alert*`,
     ``,
     `Hey ${partner.name}! 👋`,
     `*${myName}* just booked *${dateStr}* — this date is 🔴 blocked on your calendar.`,
@@ -484,7 +488,7 @@ async function saveBooking() {
     timeStr    ? `🕐 *Time:* ${timeStr}` : null,
     `🎒 *Gear:* ${gearStr}`,
     ``,
-    `Open Prebook to see the updated calendar.`,
+    `Open Pre Book to see the updated calendar.`,
   ].filter(Boolean).join('\n');
 
   // ── Open WhatsApp for the other photographer ──
@@ -509,13 +513,18 @@ async function saveBooking() {
 async function deleteBooking(dateStr, bookingId) {
   if (!confirm('Delete this booking?')) return;
 
-  const bookings = getBookings();
+  const bookings = { ...getBookings() };
   if (bookings[dateStr]) {
     bookings[dateStr] = bookings[dateStr].filter(b => b.id !== bookingId);
     if (bookings[dateStr].length === 0) delete bookings[dateStr];
   }
 
-  await saveBookings(bookings);
+  try {
+    await saveBookings(bookings);
+  } catch (err) {
+    showToast('Booking not deleted. Check your connection and try again.', 'error');
+    return;
+  }
 
   renderCalendar();
   renderUpcoming();
@@ -754,8 +763,8 @@ function escAttr(str) {
 // ╚══════════════════════════════════════════╝
 
 document.addEventListener('DOMContentLoaded', () => {
+  initFirebase();
   initParticles();
-  startFirestoreListeners();   // start real-time sync
   tryRestoreSession();
 
   document.querySelectorAll('.user-card').forEach(card => {
