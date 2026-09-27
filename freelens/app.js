@@ -473,7 +473,7 @@ async function saveBooking() {
   const timeStr  = formatTimeRange(startTime, endTime);
 
   const msg = [
-    `📸 *FreeLens Booking Alert*`,
+    `📸 *Prebook Booking Alert*`,
     ``,
     `Hey ${partner.name}! 👋`,
     `*${myName}* just booked *${dateStr}* — this date is 🔴 blocked on your calendar.`,
@@ -484,7 +484,7 @@ async function saveBooking() {
     timeStr    ? `🕐 *Time:* ${timeStr}` : null,
     `🎒 *Gear:* ${gearStr}`,
     ``,
-    `Open FreeLens to see the updated calendar.`,
+    `Open Prebook to see the updated calendar.`,
   ].filter(Boolean).join('\n');
 
   // ── Open WhatsApp for the other photographer ──
