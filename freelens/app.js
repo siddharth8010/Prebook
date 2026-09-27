@@ -30,11 +30,16 @@ let currentMonth = new Date().getMonth();
 let currentYear  = new Date().getFullYear();
 let selectedDate = null;
 
+// Local cache
+let bookingsCache = {};
+let settingsCache = {};
+let db = null;
+let firebaseReady = false;
+
 // ╔══════════════════════════════════════════╗
 // ║  FIREBASE CONFIG                         ║
 // ╚══════════════════════════════════════════╝
 
-// ⚠️ PASTE YOUR REAL firebaseConfig FROM FIREBASE CONSOLE HERE
 const firebaseConfig = {
   apiKey: "AIzaSyBzx1RtnNjdDpiiX7pX3u6Pv9Zu1EXm0oU",
   authDomain: "prebook-5b650.firebaseapp.com",
@@ -45,23 +50,16 @@ const firebaseConfig = {
   measurementId: "G-3SKT3TPWZN"
 };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-
-// Local cache (updated live by Firestore listeners)
-let bookingsCache = {};
-let settingsCache = {};
-
 // ╔══════════════════════════════════════════╗
-// ║  STORAGE (Firebase)                      ║
+// ║  STORAGE                                 ║
 // ╚══════════════════════════════════════════╝
 
 function getBookings() {
-  return bookingsCache;
+  return bookingsCache || {};
 }
 
 function getSettings() {
-  return settingsCache;
+  return settingsCache || {};
 }
 
 function getGearList() {
@@ -74,31 +72,34 @@ function getPartnerPhone() {
   return USERS[partner].phone;
 }
 
-// Save bookings → Firestore
 async function saveBookings(bookings) {
-  bookingsCache = bookings; // optimistic update
+  bookingsCache = bookings || {};
+  if (!firebaseReady || !db) {
+    console.warn('Firebase not ready – booking saved only locally');
+    return;
+  }
   try {
-    await db.collection('data').doc('bookings').set({ data: bookings });
+    await db.collection('data').doc('bookings').set({ data: bookingsCache });
   } catch (err) {
     console.error('Failed to save bookings:', err);
     showToast('Failed to sync bookings. Check internet.', 'error');
   }
 }
 
-// Save settings → Firestore
 async function saveSettingsData(settings) {
-  settingsCache = settings;
+  settingsCache = settings || {};
+  if (!firebaseReady || !db) return;
   try {
-    await db.collection('data').doc('settings').set({ data: settings });
+    await db.collection('data').doc('settings').set({ data: settingsCache });
   } catch (err) {
     console.error('Failed to save settings:', err);
     showToast('Failed to sync settings.', 'error');
   }
 }
 
-// Start real-time listeners
 function startFirestoreListeners() {
-  // Bookings listener
+  if (!db) return;
+
   db.collection('data').doc('bookings').onSnapshot(
     (snap) => {
       if (snap.exists) {
@@ -106,17 +107,17 @@ function startFirestoreListeners() {
       } else {
         bookingsCache = {};
       }
-      // Re-render if user is logged in
       if (currentUser) {
         renderCalendar();
         renderUpcoming();
         renderStats();
       }
     },
-    (err) => console.error('Bookings listener error:', err)
+    (err) => {
+      console.error('Bookings listener error:', err);
+    }
   );
 
-  // Settings listener
   db.collection('data').doc('settings').onSnapshot(
     (snap) => {
       if (snap.exists) {
@@ -125,10 +126,28 @@ function startFirestoreListeners() {
         settingsCache = {};
       }
     },
-    (err) => console.error('Settings listener error:', err)
+    (err) => {
+      console.error('Settings listener error:', err);
+    }
   );
 }
 
+function initFirebase() {
+  try {
+    if (typeof firebase === 'undefined') {
+      console.error('Firebase SDK not loaded');
+      return;
+    }
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firebaseReady = true;
+    startFirestoreListeners();
+    console.log('Firebase connected successfully');
+  } catch (err) {
+    console.error('Firebase init failed:', err);
+    firebaseReady = false;
+  }
+}
 // ╔══════════════════════════════════════════╗
 // ║  AUTHENTICATION                          ║
 // ╚══════════════════════════════════════════╝
@@ -454,7 +473,7 @@ async function saveBooking() {
   const timeStr  = formatTimeRange(startTime, endTime);
 
   const msg = [
-    `📸 *FreeLens Booking Alert*`,
+    `📸 *Prebook Booking Alert*`,
     ``,
     `Hey ${partner.name}! 👋`,
     `*${myName}* just booked *${dateStr}* — this date is 🔴 blocked on your calendar.`,
@@ -465,7 +484,7 @@ async function saveBooking() {
     timeStr    ? `🕐 *Time:* ${timeStr}` : null,
     `🎒 *Gear:* ${gearStr}`,
     ``,
-    `Open FreeLens to see the updated calendar.`,
+    `Open Prebook to see the updated calendar.`,
   ].filter(Boolean).join('\n');
 
   // ── Open WhatsApp for the other photographer ──
